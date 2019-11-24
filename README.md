@@ -79,6 +79,14 @@ batch = pd.concat([batch_p.iloc[:, 0],
                    batch_l.iloc[:, 0]], axis=1).values
 
 # build the model
+# n_gene: the number of genes
+# n_batch: the number of batches for each component of the batch vector.
+#          For this case, there are three batch vectors, 
+#          and each with 30, 3, and 2 batches, respectively.
+# z_dim: the number of latent dimensions, setting to 2 for visualizations
+# latent_dist: 'vmf' for spherical latent spaces, and 'wn' for hyperbolic latent spaces
+# observation_dist: the gene expression distribution, 'nb' for negative binomial
+# seed: seed used for reproducibility
 model = SCPHERE(n_gene=x.shape[1], n_batch=[30, 3, 2],
                 z_dim=2, latent_dist='vmf',
                 observation_dist='nb', seed=0)
@@ -93,6 +101,11 @@ model = SCPHERE(n_gene=x.shape[1], n_batch=[30, 3, 2],
 #                 observation_dist='nb', seed=0)
 
 # training
+# model: the built model above
+# x: the UMI count matrix
+# max_epoch: the number of epochs used to train scPhere
+# mb_size: the number of cells used in minibatch training
+# learning_rate: the learning rate of the gradient descent optimization algorithm
 trainer = Trainer(model=model, x=x, batch_id=batch, max_epoch=250,
                   mb_size=128, learning_rate=0.001)
 
