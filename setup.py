@@ -13,7 +13,7 @@ setup(
     license='BSD 3-clause',
     url="https://github.com/klarman-cell-observatory/scPhere",
     install_requires=['numpy >= 1.16.4',
-                      'tensorflow == 1.14.0',
+                      'tensorflow == 1.15.2',
                       'scipy >= 1.3.0',
                       'pandas >= 0.21.0',
                       'matplotlib >= 3.1.0',
