@@ -1,8 +1,6 @@
 import numpy as np
 
-import matplotlib
-matplotlib.use('TkAgg')
-import matplotlib.pyplot as plt
+from matplotlib import pyplot as plt
 
 from scphere.util.util import read_mtx
 from scphere.util.trainer import Trainer
@@ -31,7 +29,13 @@ batch = np.zeros(x.shape[0]) * -1
 # latent_dist: 'vmf' for spherical latent spaces, and 'wn' for hyperbolic latent spaces
 # observation_dist: the gene expression distribution, 'nb' for negative binomial
 # seed: seed used for reproducibility
-model = SCPHERE(n_gene=x.shape[1], n_batch=0,
+# batch_invariant: batch_invariant=True to train batch-invarant scPhere.
+#                  To train batch-invariant scPhere, i.e.,
+#                  a scPhere model taking gene expression vectors only as inputs and
+#                  embedding them to a latent space. The trained model can be used to map new data,
+#                  e.g., from new patients that have not been seen during training scPhere
+#                  (assuming patient is the major batch vector)
+model = SCPHERE(n_gene=x.shape[1], n_batch=0, batch_invariant=False,
                 z_dim=2, latent_dist='vmf',
                 observation_dist='nb', seed=0)
 
@@ -68,7 +72,7 @@ np.savetxt(save_path +
 plot_trace([np.arange(len(trainer.status['kl_divergence']))*50] * 2,
            [trainer.status['log_likelihood'], trainer.status['kl_divergence']],
            ['log_likelihood', 'kl_divergence'])
-plt.show()
+# plt.show()
 
 plt.savefig(save_path +
             'cd14_mono_eryth_train.png')

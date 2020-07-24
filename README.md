@@ -87,8 +87,14 @@ batch = pd.concat([batch_p.iloc[:, 0],
 # latent_dist: 'vmf' for spherical latent spaces, and 'wn' for hyperbolic latent spaces
 # observation_dist: the gene expression distribution, 'nb' for negative binomial
 # seed: seed used for reproducibility
+# batch_invariant: batch_invariant=True to train batch-invarant scPhere.
+#                  To train batch-invariant scPhere, i.e.,
+#                  a scPhere model taking gene expression vectors only as inputs and
+#                  embedding them to a latent space. The trained model can be used to map new data,
+#                  e.g., from new patients that have not been seen during training scPhere
+#                  (assuming patient is the major batch vector)
 model = SCPHERE(n_gene=x.shape[1], n_batch=[30, 3, 2],
-                z_dim=2, latent_dist='vmf',
+                z_dim=2, latent_dist='vmf', batch_invariant=False, 
                 observation_dist='nb', seed=0)
                 
 # For the cases there are no batch vectors, we can set n_batch=0, 
@@ -215,8 +221,24 @@ x = read.delim('/Users/jding/work/scdata/UC-out/uc_epi_latent_250epoch.tsv',
 
 PlotSphere(x, cell.type)
 
-```
+# you can save the 3d plots as png file or html file
+rgl.snapshot('/Users/jding/work/scdata/UC-out/uc_epi_latent_250epoch_scphere.png',  fmt='png')
 
+browseURL(writeWebGL(filename=paste('/Users/jding/work/scdata/UC-out/', 
+                                    'uc_epi_latent_250epoch_scphere.html', sep='/'),
+                     width=1000))
+                     
+# People may still want to show the 3D plots in 2D. 
+# We can simply convert the 3D cartesian coordinates to spherical coordinates using the car2sph function.
+
+library(sphereplot)
+y = car2sph(x)
+
+col = AssignLabelColor(distinct.col, cell.type)
+NeatPlot(y[, 1:2], col=col, cex=0.25, 
+         cex.axis=1, xaxt='n', yaxt='n')
+
+```
 
 
 

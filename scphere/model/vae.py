@@ -14,7 +14,8 @@ MAX_SIGMA_SQUARE = 1e10
 class SCPHERE(object):
     def __init__(self, n_gene, n_batch=None, z_dim=2,
                  encoder_layer=None, decoder_layer=None, activation=tf.nn.elu,
-                 latent_dist='vmf', observation_dist='nb', seed=0):
+                 latent_dist='vmf', observation_dist='nb',
+                 batch_invariant=False, seed=0):
         # n_batch should be a integer specifying the number of batches
 
         tf.compat.v1.set_random_seed(seed)
@@ -23,6 +24,8 @@ class SCPHERE(object):
             encoder_layer = [128, 64, 32]
         if decoder_layer is None:
             decoder_layer = [32, 128]
+
+        self.batch_invariant = batch_invariant
 
         self.n_input_feature = n_gene
         # placeholder for gene expression data
@@ -124,7 +127,8 @@ class SCPHERE(object):
             if self.latent_dist == 'vmf':
                 x = tf.nn.l2_normalize(x, axis=-1)
 
-        x = tf.concat([x, batch], 1)
+        if not self.batch_invariant:
+            x = tf.concat([x, batch], 1)
 
         with tf.name_scope('encoder-net'):
             h = tf.keras.layers.Dense(units=self.encoder_layer[0],
@@ -229,7 +233,8 @@ class SCPHERE(object):
             z_mu1, z_sigma_square1 = self._make_encoder_copy(
                 tf.nn.relu(self.x - samples), batch)
 
-            loss = tf.reduce_mean(tf.pow(self.z_mu - z_mu1, 2))
+            mean_diff = tf.reduce_sum(tf.pow(self.z_mu - z_mu1, 2), axis=1)
+            loss = tf.reduce_mean(mean_diff)
 
         return loss
 
