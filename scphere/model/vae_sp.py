@@ -1,4 +1,5 @@
 import tensorflow as tf
+import numpy as np
 
 from scphere.distributions import HyperbolicWrappedNorm
 from scphere.distributions import VonMisesFisher
@@ -12,7 +13,7 @@ MAX_SIGMA_SQUARE = 1e10
 
 # ==============================================================================
 class SCPHERE(object):
-    def __init__(self, n_gene, n_batch=None, z_dim=2,
+    def __init__(self, n_gene, sp, sp_mask, n_batch=None, z_dim=2,
                  encoder_layer=None, decoder_layer=None, activation=tf.nn.elu,
                  latent_dist='vmf', observation_dist='nb',
                  batch_invariant=False, seed=0):
@@ -60,6 +61,8 @@ class SCPHERE(object):
                                           name='library-size')
 
         self.z_mu, self.z_sigma_square = self._encoder(self.x, self.batch)
+        self.make_encoder = tf.compat.v1.make_template('encoder', self._encoder)
+
         with tf.name_scope('latent-variable'):
             if self.latent_dist == 'normal':
                 self.q_z = tf.distributions.Normal(self.z_mu, self.z_sigma_square)
@@ -111,6 +114,76 @@ class SCPHERE(object):
 
             self.ELBO = self.log_likelihood - self.kl
 
+        self.sp_gene, _ = tf.split(self.x, [11, self.x.shape.as_list()[-1] - 11], axis=-1)
+
+        self.sp_gene = tf.nn.relu(self.sp_gene - 3)
+        self.sp_gene = tf.math.log1p(self.sp_gene) / tf.math.log(tf.constant(10.0))
+
+        # spatial coordinates
+        self.sp = sp
+        self.sp = tf.Variable(self.sp, trainable=False, dtype='float32')
+
+        M1 = 128
+        M2 = self.sp.shape[0]
+
+        p1 = tf.matmul(
+            tf.expand_dims(tf.reduce_sum(tf.square(self.z_mu), 1), 1),
+            tf.ones(shape=(1, M2))
+        )
+        p2 = tf.transpose(tf.matmul(
+            tf.reshape(tf.reduce_sum(tf.square(self.sp), 1), shape=[-1, 1]),
+            tf.ones(shape=(M1, 1)),
+            transpose_b=True
+        ))
+
+        self.grid_dist = tf.sqrt(tf.add(p1, p2) -
+                                 2 * tf.matmul(self.z_mu, self.sp, transpose_b=True))
+
+        self.sp_mask = sp_mask
+
+        self.sp_mask_marginal = tf.Variable(self.sp_mask, trainable=False, dtype='float32')
+        B = tf.expand_dims(tf.transpose(self.sp_mask_marginal), 0)
+        self.cell_sp_mask_marginal = tf.transpose(B, perm=[0, 2, 1])
+
+        # weighting the distances by gene expression
+        AA = tf.broadcast_to(tf.expand_dims(self.grid_dist, 2),
+                             shape=[128, 64, 11])
+        self.cell_sp_mask_marginal = AA * self.cell_sp_mask_marginal
+
+        ##
+        self.sp_mask_neg = 100000.0 * (1.0 - self.sp_mask)
+        self.sp_mask_neg = tf.Variable(self.sp_mask_neg, trainable=False, dtype='float32')
+        self.sp_mask_neg = tf.broadcast_to(tf.expand_dims(self.sp_mask_neg, 0),
+                                           shape=[128, 64, 11])
+
+        ##
+        self.cell_sp_mask_marginal = self.cell_sp_mask_marginal + self.sp_mask_neg
+
+        tmp = tf.nn.relu(tf.reduce_min(self.cell_sp_mask_marginal, 1) - 0.15)
+        tmp *= self.sp_gene
+        self.dist_loss = tf.reduce_mean(tf.reduce_sum(tmp, 1))
+
+        # =====
+        # Normlize by elements
+        aa = np.zeros(11)
+        aa[:6] = 1
+        aa[9] = 1
+
+        self.sp_mask_weight = self.sp_mask / np.sum(self.sp_mask, axis=0)
+        self.sp_mask_weight = tf.Variable(self.sp_mask_weight * aa, trainable=False, dtype='float32')
+
+        A = tf.expand_dims(self.sp_gene, 2)
+        B = tf.expand_dims(tf.transpose(self.sp_mask_weight), 0)
+        C = A * B
+        self.cell_sp_mask = tf.transpose(C, perm=[0, 2, 1])
+
+        AA = tf.broadcast_to(tf.expand_dims(tf.nn.relu(self.grid_dist - 0.15), 2),
+                             shape=[128, 64, 11])
+        self.cell_dist_mask = AA * self.cell_sp_mask
+
+        self.dist_loss += tf.reduce_sum(tf.reduce_sum(tf.reduce_sum(self.cell_dist_mask, 1), 1))
+
+        ##
         self.session = tf.compat.v1.Session()
         self.saver = tf.compat.v1.train.Saver()
 
@@ -147,8 +220,11 @@ class SCPHERE(object):
                                                        activation=tf.nn.softplus)(h) + 1
                 z_sigma_square = tf.clip_by_value(z_sigma_square, 1, 10000)
 
-                z_mu = tf.keras.layers.Dense(units=self.z_dim,
-                                             activation=lambda t: tf.nn.l2_normalize(t, axis=-1))(h)
+                z_mu = tf.compat.v1.layers.dense(h, units=2,
+                                                 activation=lambda t: tf.math.abs(t))
+                y = tf.compat.v1.layers.dense(h, units=1)
+                z_mu = tf.concat([y, z_mu], axis=-1)
+                z_mu = tf.nn.l2_normalize(z_mu, axis=-1)
             elif self.latent_dist == 'wn':
                 tmp = tf.keras.layers.Dense(units=self.z_dim,
                                             activation=None)(h)
@@ -218,20 +294,16 @@ class SCPHERE(object):
 
         return z
 
-    def _make_encoder_copy(self, x, batch):
-        make_encoder = tf.compat.v1.make_template('encoder', self._encoder)
-
-        return make_encoder(x, batch)
-
     def _depth_regularizer(self, batch):
         with tf.name_scope('depth-regularizer'):
-            samples = tf.random.poisson(self.x * 0.2, [1])
+            samples = tf.random.poisson(lam=self.x * 0.0, shape=[1])
             samples = tf.reshape(samples, tf.shape(self.x))
-            z_mu1, z_sigma_square1 = self._make_encoder_copy(
-                tf.nn.relu(self.x - samples), batch)
 
-            mean_diff = tf.reduce_sum(tf.pow(self.z_mu - z_mu1, 2), axis=1)
-            loss = tf.reduce_mean(mean_diff)
+        z_mu1, z_sigma_square1 = self.make_encoder(
+            tf.nn.relu(self.x - samples), batch)
+
+        mean_diff = tf.reduce_sum(tf.pow(self.z_mu - z_mu1, 2), axis=1)
+        loss = tf.reduce_mean(mean_diff)
 
         return loss
 

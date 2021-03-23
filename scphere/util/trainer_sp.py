@@ -1,6 +1,6 @@
 import tensorflow as tf
 from scphere.util.data import DataSet
-from scphere.model.vae import OptimizerVAE
+from scphere.model.vae_sp import OptimizerVAE
 
 
 # ==============================================================================

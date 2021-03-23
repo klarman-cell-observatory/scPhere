@@ -126,7 +126,7 @@ class HyperbolicWrappedNorm(distributions.Distribution):
         return z
 
     @staticmethod
-    def _lorentzian_orig(s0, s1):
+    def _lorentzian_orig(s1, s0):
         x1 = tf.ones(s1)
         x0 = tf.zeros(s0)
 
@@ -135,13 +135,14 @@ class HyperbolicWrappedNorm(distributions.Distribution):
         return x_orig
 
     @staticmethod
-    def _clip_min_value(x, eps=1e-12):
+    def _clip_min_value(x, eps=1e-32):
         return tf.nn.relu(x - eps) + eps
 
     def _exp_map(self, x, mu):
         res = self._lorentzian_product(x, x)
         res = tf.math.sqrt(self._clip_min_value(res))
-        res = tf.clip_by_value(res, 0, 10)
+
+        res = tf.clip_by_value(res, 0, 32)
 
         return tf.math.cosh(res) * mu + tf.math.sinh(res) * x / res
 
@@ -160,9 +161,11 @@ class HyperbolicWrappedNorm(distributions.Distribution):
 
     def _lorentz_distance(self, x, y):
         res = -self._lorentzian_product(x, y)
-        z = tf.math.sqrt(self._clip_min_value(tf.math.pow(res, 2) - 1))
+        res = self._clip_min_value(res, 1+1e-32)
 
-        return tf.math.log(self._clip_min_value(res + z))
+        z = tf.math.sqrt(tf.math.pow(res, 2) - 1)
+
+        return tf.math.log(res + z)
 
     def _inv_exp_map(self, x, mu):
         alpha = -self._lorentzian_product(x, mu)
@@ -176,7 +179,7 @@ class HyperbolicWrappedNorm(distributions.Distribution):
         tmp = self._lorentzian_product(v, v)
         x_norm = tf.math.sqrt(self._clip_min_value(tmp))
 
-        x_norm = tf.clip_by_value(x_norm, 0, 10)
+        x_norm = tf.clip_by_value(x_norm, 0, 32)
         res = (tf.cast(self._dim, dtype=tf.float32) - 1.0) * \
             tf.math.log(tf.math.sinh(x_norm) / x_norm)
 
