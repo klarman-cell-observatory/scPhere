@@ -71,7 +71,8 @@ class HyperbolicWrappedNorm(distributions.Distribution):
             graph_parents=[self._loc, self._scale],
             name=name)
 
-        self._base_dist = tfp.distributions.Normal(loc=0, scale=self._scale)
+        self._base_dist = tfp.distributions.Normal(loc=tf.zeros_like(self._scale),
+                                                   scale=self._scale)
         self._dim = tf.shape(self._loc)[1] - 1
 
     @staticmethod
@@ -135,7 +136,7 @@ class HyperbolicWrappedNorm(distributions.Distribution):
         return x_orig
 
     @staticmethod
-    def _clip_min_value(x, eps=1e-32):
+    def _clip_min_value(x, eps=1e-6):
         return tf.nn.relu(x - eps) + eps
 
     def _exp_map(self, x, mu):
@@ -161,16 +162,18 @@ class HyperbolicWrappedNorm(distributions.Distribution):
 
     def _lorentz_distance(self, x, y):
         res = -self._lorentzian_product(x, y)
-        res = self._clip_min_value(res, 1+1e-32)
+        res = self._clip_min_value(res, 1+1e-6)
 
-        z = tf.math.sqrt(tf.math.pow(res, 2) - 1)
+        z = tf.sqrt(res+1) * tf.sqrt(res-1)
 
         return tf.math.log(res + z)
 
     def _inv_exp_map(self, x, mu):
         alpha = -self._lorentzian_product(x, mu)
+        alpha = self._clip_min_value(alpha, 1+1e-6)
+
         tmp = self._lorentz_distance(x, mu) / \
-            tf.sqrt(self._clip_min_value(tf.math.pow(alpha, 2) - 1))
+            tf.sqrt(alpha+1) / tf.sqrt(alpha-1)
 
         return tmp * (x - alpha * mu)
 
@@ -189,7 +192,8 @@ class HyperbolicWrappedNorm(distributions.Distribution):
         loc0 = self._lorentzian_orig(shape1, shape)
         v1 = self._parallel_transport(v, self._loc, loc0)
         xx = v1[..., 1:]
-        log_base_prob = self._base_dist.log_prob(xx)
+        log_base_prob = tf.reduce_sum(self._base_dist.log_prob(xx), -1)
+        log_base_prob = array_ops.reshape(log_base_prob, shape1)
 
         return log_base_prob - res
 

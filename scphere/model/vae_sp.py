@@ -271,7 +271,7 @@ class SCPHERE(object):
         return mu, sigma_square
 
     @staticmethod
-    def _clip_min_value(x, eps=1e-32):
+    def _clip_min_value(x, eps=EPS):
         return tf.nn.relu(x - eps) + eps
 
     @staticmethod
